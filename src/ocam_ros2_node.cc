@@ -11,7 +11,12 @@ class OcamRos2Node : public rclcpp::Node {
  public:
   OcamRos2Node(const std::string& node_name) : Node(node_name) {
     std::cerr << "node starts\n";
-    ocam_ = std::make_unique<ocam::Camera>(resolution_, frame_rate_);
+    ocam_camera_ = std::make_unique<ocam::Camera>(resolution_, frame_rate_);
+    use_auto_exposure_ = false;
+    exposure_ = 25;
+    ocam_camera_->ControlUvc(exposure_, gain_, wb_blue_, wb_red_,
+                             use_auto_exposure_);
+
     PreparePublishers();
     timer_ =
         this->create_wall_timer(std::chrono::milliseconds(100),
@@ -58,11 +63,10 @@ class OcamRos2Node : public rclcpp::Node {
 
     // loop to publish images;
     ocam::Image camera_image;
-
     while (true) {
       std::chrono::time_point now = std::chrono::steady_clock::now();
 
-      if (!ocam_->GetImage(&camera_image)) {
+      if (!ocam_camera_->GetImage(&camera_image)) {
         usleep(1000);
         continue;
       } else {
@@ -92,14 +96,17 @@ class OcamRos2Node : public rclcpp::Node {
 
   rclcpp::TimerBase::SharedPtr timer_;
 
-  int resolution_;
+  int resolution_{2};
   double frame_rate_;
-  int exposure_, gain_, wb_blue_, wb_red_;
-  bool autoexposure_;
-  bool show_image_;
+  int exposure_{10};
+  int gain_{40};
+  int wb_blue_{50};
+  int wb_red_{50};
+  bool use_auto_exposure_{true};
+  bool show_image_{true};
   bool config_changed_;
-  std::string camera_frame_id_;
-  std::unique_ptr<ocam::Camera> ocam_{nullptr};
+  std::string camera_frame_id_{""};
+  std::unique_ptr<ocam::Camera> ocam_camera_{nullptr};
 };
 
 #define NODE_NAME "ocam_ros2_node"
