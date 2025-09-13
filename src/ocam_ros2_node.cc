@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -9,13 +10,19 @@
 
 class OcamRos2Node : public rclcpp::Node {
  public:
-  OcamRos2Node(const std::string& node_name) : Node(node_name) {
+  explicit OcamRos2Node(const std::string& node_name) : Node(node_name) {
     std::cerr << "node starts\n";
+
+    frame_rate_ = 10;
     ocam_camera_ = std::make_unique<ocam::Camera>(resolution_, frame_rate_);
-    use_auto_exposure_ = false;
-    exposure_ = 25;
-    ocam_camera_->ControlUvc(exposure_, gain_, wb_blue_, wb_red_,
-                             use_auto_exposure_);
+
+    ocam::CameraConfig config;
+    config.exposure = 25;  // milliseconds
+    config.gain = 40;
+    config.wb_blue = 50;
+    config.wb_red = 50;
+    config.auto_exposure = false;
+    CallbackControlUvc(config);
 
     PreparePublishers();
     timer_ =
@@ -25,52 +32,29 @@ class OcamRos2Node : public rclcpp::Node {
 
   ~OcamRos2Node() {}
 
-  void PreparePublishers() {
-    // pose_publisher_ =
-    //     this->create_publisher<OdometryMsg>("~/pose",
-    //     rclcpp::SensorDataQoS());
+  void PreparePublishers() {}
+
+  void CallbackControlUvc(ocam::CameraConfig& config) {
+    ocam_camera_->ControlUvc(config);
   }
 
-  // void callback(ocam::camConfig& config, uint32_t level) {
-  //   ocam_->ControlUvc(config.exposure, config.gain, config.wb_blue,
-  //                     config.wb_red, config.auto_exposure);
-  // }
-
   void PollDevice() {
-    // Reconfigure confidence
-    // dynamic_reconfigure::Server<ocam::camConfig> server;
-    // dynamic_reconfigure::Server<ocam::camConfig>::CallbackType f;
-    // f = boost::bind(&oCamROS::callback, this, _1, _2);
-    // server.setCallback(f);
-
-    // setup publisher stuff
-    // image_transport::ImageTransport it(nh);
-    // image_transport::Publisher camera_image_pub =
-    // it.advertise("camera/image_raw", 1);
-
-    // ros::Publisher camera_info_pub =
-    //     nh.advertise<sensor_msgs::CameraInfo>("camera/camera_info", 1);
-
-    // sensor_msgs::CameraInfo camera_info;
-
-    // Get config from the left, right.yaml in config
-    // ROS_INFO("Loading from ROS calibration files");
-    // camera_info_manager::CameraInfoManager info_manager(nh);
-    // info_manager.setCameraName("camera");
-    // info_manager.loadCameraInfo("package://ocam/config/camera.yaml");
-    // camera_info = info_manager.getCameraInfo();
-    // camera_info.header.frame_id = camera_frame_id_;
-
-    // loop to publish images;
     ocam::Image camera_image;
     while (true) {
       std::chrono::time_point now = std::chrono::steady_clock::now();
 
-      if (!ocam_camera_->GetImage(&camera_image)) {
-        usleep(1000);
-        continue;
-      } else {
-        std::cerr << "Success, found camera" << std::endl;
+      const auto get_image_status = ocam_camera_->GetImage(&camera_image);
+      switch (get_image_status) {
+        case ocam::GetImageStatus::SUCCESS:
+          break;
+        case ocam::GetImageStatus::NO_DATA: {
+          usleep(100000);
+          std::cerr << "Fail to get image for some reason." << std::endl;
+          continue;  // Skip the rest of the loop
+        }
+        case ocam::GetImageStatus::DISCONNECTED: {
+          throw std::runtime_error("The device has been disconnected.");
+        }
       }
 
       // if (camera_image_pub.getNumSubscribers() > 0) {
@@ -97,14 +81,9 @@ class OcamRos2Node : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr timer_;
 
   int resolution_{2};
-  double frame_rate_;
-  int exposure_{10};
-  int gain_{40};
-  int wb_blue_{50};
-  int wb_red_{50};
-  bool use_auto_exposure_{true};
+  int frame_rate_{0};
   bool show_image_{true};
-  bool config_changed_;
+  bool config_changed_{false};
   std::string camera_frame_id_{""};
   std::unique_ptr<ocam::Camera> ocam_camera_{nullptr};
 };

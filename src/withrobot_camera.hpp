@@ -41,7 +41,7 @@ If not, see <http://www.gnu.org/licenses/>          # # #
 /*
  * DBG print
  */
-//#define PRINT_DEBUG_MSG /* When you want to show the debug messages \
+#define PRINT_DEBUG_MSG /* When you want to show the debug messages \
 // remove the comment here. */
 
 #ifdef PRINT_DEBUG_MSG

@@ -550,7 +550,15 @@ int Camera::get_frame(unsigned char* out_buffer, const unsigned int size,
     return -1;
   }
 
-  return get_buffer(out_buffer, size);
+  int data_size = get_buffer(out_buffer, size);
+  if (data_size == -1) {
+    if (errno == ENODEV) {
+      DBG_PRINTF("The device has been disconnected.");
+      return -2;
+    }
+  }
+
+  return data_size;
 }
 
 /**

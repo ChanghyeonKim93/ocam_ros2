@@ -24,16 +24,25 @@ struct DeviceInfo {
   bool flag0144{false};
 };
 
+struct CameraConfig {
+  int exposure{25};
+  int gain{50};
+  int wb_blue{150};
+  int wb_red{150};
+  bool auto_exposure{false};
+};
+
+enum class GetImageStatus : uint8_t { SUCCESS = 0, NO_DATA, DISCONNECTED };
+
 class Camera {
  public:
-  Camera(const int resolution, const double frame_rate) : camera_{nullptr} {
+  Camera(const int resolution, const int frame_rate) : camera_{nullptr} {
     std::unordered_map<int, ImageSize> resolution_map =  //
         {{0, {1280, 960}},                               //
          {1, {1280, 720}},                               //
          {2, {640, 480}},                                //
          {3, {320, 240}}};
     device_info_ = GetDeviceInfo();
-
     camera_ = std::make_unique<Withrobot::Camera>(device_info_.path.c_str());
 
     for (int i = 0; i < device_info_.id; i++) {
@@ -68,11 +77,10 @@ class Camera {
     // Initialize camera format
     camera_->set_format(image_size_.width, image_size_.height,
                         Withrobot::fourcc_to_pixformat('G', 'R', 'B', 'G'), 1,
-                        (unsigned int)frame_rate);
+                        frame_rate);
     camera_->get_current_format(camera_format_);
     camera_format_.print();
 
-    /* Withrobot camera start */
     camera_->start();
   }
 
@@ -107,38 +115,45 @@ class Camera {
     return device_info;
   }
 
-  void ControlUvc(const int exposure, const int gain, const int blue,
-                  const int red, const bool auto_exposure) {
+  void ControlUvc(const CameraConfig& config) {
     /* Exposure Setting */
-    camera_->set_control("Exposure (Absolute)", exposure);
+    camera_->set_control("Exposure (Absolute)", config.exposure);
 
     /* Gain Setting */
-    camera_->set_control("Gain", gain);
+    camera_->set_control("Gain", config.gain);
 
     /* White Balance Setting */
-    camera_->set_control("White Balance Blue Component", blue);
-    camera_->set_control("White Balance Red Component", red);
+    camera_->set_control("White Balance Blue Component", config.wb_blue);
+    camera_->set_control("White Balance Red Component", config.wb_red);
 
     /* Auto Exposure Setting */
-    auto_exposure ? camera_->set_control("Exposure, Auto", 0x3)
-                  : camera_->set_control("Exposure, Auto", 0x1);
+    config.auto_exposure ? camera_->set_control("Exposure, Auto", 0x3)
+                         : camera_->set_control("Exposure, Auto", 0x1);
   }
 
-  bool GetImage(Image* image) {
+  GetImageStatus GetImage(Image* image) {
     cv::Mat srcImg(cv::Size(camera_format_.width, camera_format_.height),
                    CV_8UC1);
     cv::Mat dstImg;
     // image->data.resize(camFormat.width * camFormat.height);
-    // if (camera->get_frame(image->data.data(), camFormat.image_size, 1) != -1)
-    // {
-    if (camera_->get_frame(srcImg.data, camera_format_.image_size, 1) != -1) {
-      cvtColor(srcImg, dstImg, cv::COLOR_BayerGR2RGB);
-      cv::imshow("image", dstImg);
-      cv::waitKey(5);
-      return true;
-    } else {
-      return false;
+    const int data_size =
+        camera_->get_frame(srcImg.data, camera_format_.image_size, 1);
+
+    // Data is not received
+    if (data_size == -1) {
+      std::cerr << "Data is not received" << std::endl;
+      return GetImageStatus::NO_DATA;
     }
+
+    if (data_size == -2) {
+      std::cerr << "The device has been disconnected." << std::endl;
+      return GetImageStatus::DISCONNECTED;
+    }
+
+    // cvtColor(srcImg, dstImg, cv::COLOR_BayerGR2RGB);
+    cv::imshow("image", srcImg);
+    cv::waitKey(5);
+    return GetImageStatus::SUCCESS;
   }
 
  private:
